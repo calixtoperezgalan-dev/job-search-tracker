@@ -246,7 +246,10 @@ Be direct, actionable, and data-driven. This is an executive who needs strategic
     }
 
     const claudeData = await claudeResponse.json()
-    const content = claudeData.content[0].text
+    let content = claudeData.content[0].text
+
+    // Remove markdown code blocks if present
+    content = content.replace(/^```json\n?/m, '').replace(/\n?```$/m, '').trim()
 
     // Parse the JSON response from Claude
     let insights
