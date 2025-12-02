@@ -127,8 +127,8 @@ ${extractedText}
         'anthropic-version': '2023-06-01',
       },
       body: JSON.stringify({
-        model: 'claude-3-haiku-20240307', // Force cache invalidation - Dec 2 2025
-        max_tokens: 8000,
+        model: 'claude-3-haiku-20240307',
+        max_tokens: 4096, // Haiku max output tokens
         messages: [
           {
             role: 'user',
