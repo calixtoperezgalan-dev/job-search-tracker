@@ -55,10 +55,19 @@ export async function downloadDriveFile(accessToken: string, fileId: string, mim
       throw new Error(`Failed to download file: ${response.status} ${response.statusText}`);
     }
 
-    // Convert to base64
+    // Convert to base64 (chunk processing for large files)
     const blob = await response.blob();
     const arrayBuffer = await blob.arrayBuffer();
-    const base64 = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
+    const bytes = new Uint8Array(arrayBuffer);
+
+    // Process in chunks to avoid call stack issues with large files
+    const chunkSize = 8192;
+    let base64 = '';
+    for (let i = 0; i < bytes.length; i += chunkSize) {
+      const chunk = bytes.subarray(i, Math.min(i + chunkSize, bytes.length));
+      base64 += String.fromCharCode(...chunk);
+    }
+    base64 = btoa(base64);
 
     return { content: base64, isPDF: false };
   }

@@ -163,6 +163,15 @@ ${extractedText}
     let content = textBlock.text
     console.log('Raw Claude response text:', content.substring(0, 300))
 
+    // Remove markdown code blocks and any preamble text
+    content = content.replace(/^```json\n?/m, '').replace(/\n?```$/m, '').trim()
+
+    // Extract JSON from text that may have preamble
+    const jsonMatch = content.match(/\{[\s\S]*\}/)
+    if (jsonMatch) {
+      content = jsonMatch[0]
+    }
+
     // Sanitize the Claude response before parsing
     content = sanitizeText(content)
 
