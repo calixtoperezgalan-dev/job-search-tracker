@@ -165,6 +165,15 @@ Scoring Guidelines:
     const claudeData = await claudeResponse.json()
     let content = claudeData.content[0].text
 
+    // Remove markdown code blocks and any preamble text
+    content = content.replace(/^```json\n?/m, '').replace(/\n?```$/m, '').trim()
+
+    // Extract JSON from text that may have preamble
+    const jsonMatch = content.match(/\{[\s\S]*\}/)
+    if (jsonMatch) {
+      content = jsonMatch[0]
+    }
+
     // Sanitize the Claude response before parsing
     content = sanitizeText(content)
 
