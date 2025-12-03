@@ -106,9 +106,11 @@ export default function GmailSync() {
           Gmail Sync
         </h3>
         {syncState && (
-          <label className="flex items-center gap-2 cursor-pointer">
+          <label htmlFor="gmail-sync-enabled" className="flex items-center gap-2 cursor-pointer">
             <input
               type="checkbox"
+              id="gmail-sync-enabled"
+              name="gmail_sync_enabled"
               checked={syncState.sync_enabled}
               onChange={toggleSync}
               className="w-4 h-4 text-blue-600"
@@ -165,17 +167,48 @@ export default function GmailSync() {
             )}
 
             {syncResult && (
-              <div className="p-3 bg-green-50 border border-green-200 rounded-lg flex items-start gap-2">
-                <CheckCircle className="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5" />
+              <div className={`p-3 border rounded-lg flex items-start gap-2 ${
+                syncResult.success === false ? 'bg-yellow-50 border-yellow-200' : 'bg-green-50 border-green-200'
+              }`}>
+                <CheckCircle className={`w-5 h-5 flex-shrink-0 mt-0.5 ${
+                  syncResult.success === false ? 'text-yellow-600' : 'text-green-600'
+                }`} />
                 <div className="flex-1">
-                  <p className="text-sm font-medium text-green-900">Sync Successful</p>
-                  <div className="text-xs text-green-700 mt-2 space-y-1">
-                    <p>• Processed: {syncResult.processed} emails</p>
-                    <p>• Matched: {syncResult.matched} applications updated</p>
-                    <p>• Unmatched: {syncResult.unmatched} emails</p>
-                    {syncResult.networkingContacts > 0 && (
-                      <p>• Networking: {syncResult.networkingContacts} contacts</p>
-                    )}
+                  <p className={`text-sm font-medium ${
+                    syncResult.success === false ? 'text-yellow-900' : 'text-green-900'
+                  }`}>
+                    {syncResult.success === false ? 'Label Configuration Issue' : 'Sync Successful'}
+                  </p>
+                  <div className={`text-xs mt-2 space-y-1 ${
+                    syncResult.success === false ? 'text-yellow-700' : 'text-green-700'
+                  }`}>
+                    <>
+                      {syncResult.success === false && syncResult.debug?.expectedLabels ? (
+                        <>
+                          <p className="font-medium">No Gmail labels found matching expected names.</p>
+                          <p className="mt-2">Expected labels:</p>
+                          <p className="font-mono text-xs">{syncResult.debug.expectedLabels.join(', ')}</p>
+                          <p className="mt-2">Your Gmail labels (first 10):</p>
+                          <p className="font-mono text-xs">{syncResult.debug.availableLabels?.slice(0, 10).join(', ')}</p>
+                        </>
+                      ) : (
+                        <>
+                          <p>• Processed: {syncResult.processed} emails</p>
+                          <p>• Matched: {syncResult.matched} applications updated</p>
+                          <p>• Unmatched: {syncResult.unmatched} emails</p>
+                          {syncResult.networkingContacts > 0 && (
+                            <p>• Networking: {syncResult.networkingContacts} contacts</p>
+                          )}
+                        </>
+                      )}
+                      {syncResult.debug && (
+                        <div className="mt-2 pt-2 border-t border-gray-200">
+                          <p className="font-medium">Debug Info:</p>
+                          <p>• Found labels: {syncResult.debug.foundLabels?.join(', ') || 'none'}</p>
+                          <p>• Messages found: {syncResult.debug.messagesFound ?? 0}</p>
+                        </div>
+                      )}
+                    </>
                   </div>
                 </div>
               </div>

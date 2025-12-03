@@ -21,6 +21,10 @@ interface Application {
   company_size: string | null;
   industry: string | null;
   company_type: string | null;
+  stock_ticker: string | null;
+  stock_price: number | null;
+  annual_revenue: string | null;
+  company_summary: string | null;
 }
 
 const STATUS_OPTIONS = [
@@ -177,16 +181,23 @@ export default function Applications() {
                 <th className="px-4 py-3 text-left">
                   <input
                     type="checkbox"
+                    id="select-all-applications"
+                    name="select_all"
+                    aria-label="Select all applications"
                     checked={filtered.length > 0 && selectedIds.size === filtered.length}
                     onChange={toggleSelectAll}
                     className="w-4 h-4 rounded border-gray-300"
                   />
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Company</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase w-64">Summary</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Title</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Industry</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Size</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Revenue</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Ticker</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Price</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Salary</th>
@@ -200,16 +211,33 @@ export default function Applications() {
                   <td className="px-4 py-4">
                     <input
                       type="checkbox"
+                      id={`select-app-${app.id}`}
+                      name={`select_app_${app.id}`}
+                      aria-label={`Select ${app.company_name}`}
                       checked={selectedIds.has(app.id)}
                       onChange={() => toggleSelection(app.id)}
                       className="w-4 h-4 rounded border-gray-300"
                     />
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap font-medium text-gray-900">{app.company_name}</td>
+                  <td className="px-6 py-4 text-sm text-gray-600 max-w-xs">
+                    <div className="line-clamp-2" title={app.company_summary || ''}>
+                      {app.company_summary || '-'}
+                    </div>
+                  </td>
                   <td className="px-6 py-4 whitespace-nowrap text-gray-600">{app.job_title}</td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">{app.industry || '-'}</td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">{app.company_size || '-'}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">{app.annual_revenue || '-'}</td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600 capitalize">{app.company_type || '-'}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                    {app.stock_ticker ? (
+                      <span className="font-mono text-blue-600">{app.stock_ticker}</span>
+                    ) : '-'}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                    {app.stock_price ? `$${app.stock_price.toFixed(2)}` : '-'}
+                  </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     <Badge className={STATUS_COLORS[app.status] || 'bg-gray-100'}>{app.status.replace(/_/g, ' ')}</Badge>
                   </td>

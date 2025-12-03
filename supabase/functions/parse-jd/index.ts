@@ -85,6 +85,17 @@ serve(async (req) => {
       )
     }
 
+    // Extract company name from filename if it follows pattern: [Company] - [Role]
+    let companyHint: string | null = null
+    if (fileName) {
+      const filenameWithoutExt = fileName.replace(/\.(docx?|txt|pdf)$/i, '')
+      const match = filenameWithoutExt.match(/^([^-]+)\s*-\s*(.+)$/)
+      if (match) {
+        companyHint = match[1].trim()
+        console.log(`Extracted company hint from filename: "${companyHint}"`)
+      }
+    }
+
     let extractedText = documentText
 
     // If it's a .docx file (base64), extract text using mammoth
@@ -111,9 +122,9 @@ serve(async (req) => {
     }
 
     // Prepare message content for Claude
-    const messageContent = `${extractionPrompt}
+    let messageContent = `${extractionPrompt}
 
-Job Description Document:
+${companyHint ? `FILENAME HINT: The file is named "${fileName}" which suggests the company name is: "${companyHint}". Use this as the company_name unless the document clearly indicates a different company.\n\n` : ''}Job Description Document:
 ---
 ${extractedText}
 ---`

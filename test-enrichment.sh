@@ -4,31 +4,26 @@
 # This sends a sample American Express job description
 
 SUPABASE_URL="https://alcnbrdpzyspeqvvsjzu.supabase.co"
-ANON_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFsY25icmRwenlzcGVxdnZzanp1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzMyNDk4NTgsImV4cCI6MjA0ODgyNTg1OH0.Ge2WFGDnxJ4OuJhiLQAkV8wFXhj0xqGzXmBbdTl3fV0"
+ANON_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFsY25icmRwenlzcGVxdnZzanp1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQ2ODExNjksImV4cCI6MjA4MDI1NzE2OX0.oI5tsvwopz_4-umWsXtVG4cC9dYoehdrmmf2b02oa4g"
 
 # Sample job description text
-JOB_TEXT="American Express
-
-VP, Cross Platform Delivery, Enterprise Data & AI
-
-New York, NY
-
-Salary: \$280,000 - \$400,000
-
-We are seeking an experienced VP to lead our cross-platform delivery initiatives."
+JOB_TEXT="American Express - VP, Cross Platform Delivery, Enterprise Data & AI - New York, NY - Salary: \$280,000 - \$400,000 - We are seeking an experienced VP to lead our cross-platform delivery initiatives."
 
 echo "Testing parse-jd function with American Express job..."
 echo ""
 
+# Create JSON payload properly
+PAYLOAD=$(jq -n \
+  --arg text "$JOB_TEXT" \
+  --arg fileId "test123" \
+  --arg fileName "test-amex.txt" \
+  --arg isDocx "false" \
+  '{documentText: $text, fileId: $fileId, fileName: $fileName, isDocx: ($isDocx == "true")}')
+
 curl -X POST "${SUPABASE_URL}/functions/v1/parse-jd" \
   -H "Authorization: Bearer ${ANON_KEY}" \
   -H "Content-Type: application/json" \
-  -d "{
-    \"documentText\": \"${JOB_TEXT}\",
-    \"fileId\": \"test123\",
-    \"fileName\": \"test-amex.txt\",
-    \"isDocx\": false
-  }" | jq '.'
+  -d "$PAYLOAD" | jq '.'
 
 echo ""
 echo "Check if the response includes:"

@@ -30,8 +30,8 @@ export default function Settings() {
         <Card>
           <h3 className="font-semibold text-gray-900 mb-4">Target Profile</h3>
           <div className="grid grid-cols-2 gap-4">
-            <Input label="Target Salary Min ($)" defaultValue="800000" />
-            <Input label="Years Experience" defaultValue="20" />
+            <Input label="Target Salary Min ($)" name="target_salary_min" id="target_salary_min" defaultValue="800000" />
+            <Input label="Years Experience" name="years_experience" id="years_experience" defaultValue="20" />
           </div>
         </Card>
 

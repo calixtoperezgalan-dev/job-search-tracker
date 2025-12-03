@@ -57,11 +57,45 @@ async function refreshAccessToken(refreshToken: string): Promise<{ accessToken: 
 }
 
 function extractCompanyFromEmail(subject: string, senderName: string, senderEmail: string): string | null {
+  // Try to extract from subject line first (most reliable)
+  const subjectPatterns = [
+    /at\s+([A-Z][a-zA-Z0-9\s&]+)/i,           // "at BlackRock"
+    /for\s+([A-Z][a-zA-Z0-9\s&]+)/i,          // "for BlackRock"
+    /\bat\s+([A-Z][a-zA-Z0-9\s&]+)/i,         // word boundary "at BlackRock"
+  ]
+
+  for (const pattern of subjectPatterns) {
+    const match = subject.match(pattern)
+    if (match && match[1]) {
+      const company = match[1].trim()
+      // Skip generic words
+      if (!['the', 'a', 'an', 'your'].includes(company.toLowerCase())) {
+        return company
+      }
+    }
+  }
+
+  // Try to extract from email local part (before @)
+  // e.g., blackrock@myworkday.com -> "blackrock"
+  const localPart = senderEmail.split('@')[0]
+  if (localPart) {
+    // Check if local part looks like a company name (not generic like "noreply", "info", "recruiter")
+    const genericPrefixes = ['noreply', 'no-reply', 'info', 'contact', 'support', 'hello', 'team', 'recruiter', 'jobs', 'careers']
+    const isGeneric = genericPrefixes.some(prefix => localPart.toLowerCase().includes(prefix))
+
+    if (!isGeneric && localPart.length > 2) {
+      return localPart.charAt(0).toUpperCase() + localPart.slice(1).toLowerCase()
+    }
+  }
+
   // Try to extract company from sender email domain
   const domain = senderEmail.split('@')[1]
   if (domain && !domain.includes('gmail.com') && !domain.includes('yahoo.com') && !domain.includes('outlook.com')) {
     const companyName = domain.split('.')[0]
-    return companyName.charAt(0).toUpperCase() + companyName.slice(1)
+    // Skip generic domains
+    if (!['myworkday', 'workday', 'greenhouse', 'lever', 'jobvite', 'smartrecruiters'].includes(companyName.toLowerCase())) {
+      return companyName.charAt(0).toUpperCase() + companyName.slice(1)
+    }
   }
 
   // Try to extract from sender name (if it's "Name @ Company")
@@ -70,12 +104,6 @@ function extractCompanyFromEmail(subject: string, senderName: string, senderEmai
     if (parts.length > 1) {
       return parts[1].trim()
     }
-  }
-
-  // Try to extract from subject line
-  const companyMatch = subject.match(/at\s+([A-Z][a-zA-Z0-9\s&]+)/i)
-  if (companyMatch) {
-    return companyMatch[1].trim()
   }
 
   return null
@@ -183,10 +211,73 @@ serve(async (req) => {
         .eq('user_id', user.id)
     }
 
-    // Fetch messages with JH25 labels
-    const labelQuery = Object.keys(GMAIL_LABEL_STATUS_MAP).join(' OR ') + ` OR ${NETWORKING_LABEL}`
+    // Fetch Gmail labels first to find label IDs for our target labels
+    const gmailLabelsResponse = await fetch(
+      'https://gmail.googleapis.com/gmail/v1/users/me/labels',
+      {
+        headers: { 'Authorization': `Bearer ${accessToken}` },
+      }
+    )
+
+    if (!gmailLabelsResponse.ok) {
+      return new Response(
+        JSON.stringify({ error: 'Failed to fetch Gmail labels' }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
+
+    const labelsData = await gmailLabelsResponse.json()
+    const allLabels = labelsData.labels || []
+
+    // Find label IDs for our target labels (handle nested labels)
+    const targetLabelIds: string[] = []
+    const expectedLabels = [...Object.keys(GMAIL_LABEL_STATUS_MAP), NETWORKING_LABEL]
+    const foundLabels: string[] = []
+
+    console.log('All Gmail labels:', allLabels.map((l: any) => l.name))
+    console.log('Expected labels:', expectedLabels)
+
+    for (const expectedLabel of expectedLabels) {
+      // Find label by exact match or by ending match (for nested labels)
+      const matchingLabel = allLabels.find((l: any) =>
+        l.name === expectedLabel || l.name?.endsWith(expectedLabel)
+      )
+      if (matchingLabel) {
+        targetLabelIds.push(matchingLabel.id)
+        foundLabels.push(matchingLabel.name)
+        console.log(`Found label: "${matchingLabel.name}" (ID: ${matchingLabel.id})`)
+      } else {
+        console.log(`No match found for: "${expectedLabel}"`)
+      }
+    }
+
+    console.log('Target label IDs:', targetLabelIds)
+    console.log('Found labels:', foundLabels)
+
+    if (targetLabelIds.length === 0) {
+      return new Response(
+        JSON.stringify({
+          success: false,
+          processed: 0,
+          matched: 0,
+          unmatched: 0,
+          networkingContacts: 0,
+          error: 'No matching Gmail labels found. Please ensure your labels match the expected names.',
+          debug: {
+            expectedLabels,
+            availableLabels: allLabels.map((l: any) => l.name).slice(0, 50),
+          }
+        }),
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
+
+    // Fetch messages with any of our target label IDs
+    const labelIdQuery = targetLabelIds.map(id => `label:${id}`).join(' OR ')
+    console.log('Gmail search query:', labelIdQuery)
+
     const gmailResponse = await fetch(
-      `https://gmail.googleapis.com/gmail/v1/users/me/messages?q=label:(${encodeURIComponent(labelQuery)})&maxResults=500`,
+      `https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${encodeURIComponent(labelIdQuery)}&maxResults=500`,
       {
         headers: {
           'Authorization': `Bearer ${accessToken}`,
@@ -196,6 +287,7 @@ serve(async (req) => {
 
     if (!gmailResponse.ok) {
       const errorText = await gmailResponse.text()
+      console.error('Gmail API error:', errorText)
       return new Response(
         JSON.stringify({ error: 'Failed to fetch Gmail messages', details: errorText }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -204,13 +296,24 @@ serve(async (req) => {
 
     const gmailData = await gmailResponse.json()
     const messages = gmailData.messages || []
+    console.log(`Found ${messages.length} messages`)
 
     let processed = 0
     let matched = 0
     let unmatched = 0
     let networkingContacts = 0
 
-    // Process each message
+    // Store all processed emails grouped by application ID
+    const emailsByApplication = new Map<string, Array<{
+      messageId: string
+      status: string
+      statusLabel: string
+      receivedAt: Date
+    }>>()
+
+    const unmatchedEmails: Array<any> = []
+
+    // First pass: collect all emails and group by application
     for (const msg of messages) {
       // Fetch full message details
       const msgResponse = await fetch(
@@ -230,19 +333,7 @@ serve(async (req) => {
       const senderMatch = from.match(/(.+?)\s*<(.+?)>/) || [null, from, from]
       const senderName = senderMatch[1]?.trim() || ''
       const senderEmail = senderMatch[2]?.trim() || from
-
-      // Get labels for this message
-      const gmailLabelsResponse = await fetch(
-        'https://gmail.googleapis.com/gmail/v1/users/me/labels',
-        {
-          headers: { 'Authorization': `Bearer ${accessToken}` },
-        }
-      )
-
-      if (!gmailLabelsResponse.ok) continue
-
-      const labelsData = await gmailLabelsResponse.json()
-      const allLabels = labelsData.labels || []
+      const receivedAt = new Date(parseInt(fullMessage.internalDate))
 
       const messageLabels = fullMessage.labelIds
         .map(labelId => {
@@ -251,79 +342,127 @@ serve(async (req) => {
         })
         .filter(Boolean)
 
-      // Check if it's a networking email
-      if (messageLabels.includes(NETWORKING_LABEL)) {
-        // TODO: Handle networking contacts
+      // Check if it's a networking email (handle nested labels)
+      const isNetworking = messageLabels.some(label =>
+        label === NETWORKING_LABEL || label?.endsWith(NETWORKING_LABEL)
+      )
+      if (isNetworking) {
         networkingContacts++
         processed++
         continue
       }
 
-      // Find the status label
-      const statusLabel = messageLabels.find(label => label && GMAIL_LABEL_STATUS_MAP[label])
-      if (!statusLabel) continue
+      // Find the status label (handle nested labels by checking if label ends with expected pattern)
+      let statusLabel: string | null = null
+      let newStatus: string | null = null
 
-      const newStatus = GMAIL_LABEL_STATUS_MAP[statusLabel]
+      for (const label of messageLabels) {
+        if (!label) continue
+
+        // Check for exact match first
+        if (GMAIL_LABEL_STATUS_MAP[label]) {
+          statusLabel = label
+          newStatus = GMAIL_LABEL_STATUS_MAP[label]
+          break
+        }
+
+        // Check if label ends with any of our expected labels (handles nested labels like "JH - Apps/JH25 - Recruiter Screen")
+        for (const [expectedLabel, status] of Object.entries(GMAIL_LABEL_STATUS_MAP)) {
+          if (label.endsWith(expectedLabel)) {
+            statusLabel = label
+            newStatus = status
+            break
+          }
+        }
+
+        if (statusLabel) break
+      }
+
+      if (!statusLabel || !newStatus) continue
 
       // Try to match to an application
       const companyName = extractCompanyFromEmail(subject, senderName, senderEmail)
       const applicationId = companyName ? await fuzzyMatchCompany(supabase, user.id, companyName) : null
 
+      processed++
+
       if (applicationId) {
-        // Update application status
-        const { data: currentApp } = await supabase
-          .from('applications')
-          .select('status')
-          .eq('id', applicationId)
-          .single()
-
-        if (currentApp && currentApp.status !== newStatus) {
-          // Update status
-          await supabase
-            .from('applications')
-            .update({
-              status: newStatus,
-              status_updated_at: new Date().toISOString(),
-              updated_at: new Date().toISOString(),
-            })
-            .eq('id', applicationId)
-
-          // Log status change
-          await supabase
-            .from('application_status_history')
-            .insert({
-              user_id: user.id,
-              application_id: applicationId,
-              previous_status: currentApp.status,
-              new_status: newStatus,
-              source: 'gmail',
-              gmail_message_id: fullMessage.id,
-              notes: `Auto-updated from Gmail label: ${statusLabel}`,
-            })
-
-          matched++
+        // Group emails by application ID
+        if (!emailsByApplication.has(applicationId)) {
+          emailsByApplication.set(applicationId, [])
         }
+        emailsByApplication.get(applicationId)!.push({
+          messageId: fullMessage.id,
+          status: newStatus,
+          statusLabel,
+          receivedAt,
+        })
       } else {
-        // Add to unmatched emails
+        // Store unmatched email
+        unmatchedEmails.push({
+          user_id: user.id,
+          gmail_message_id: fullMessage.id,
+          gmail_thread_id: fullMessage.threadId,
+          subject,
+          sender_email: senderEmail,
+          sender_name: senderName,
+          snippet: fullMessage.snippet,
+          label_name: statusLabel,
+          suggested_status: newStatus,
+          received_at: receivedAt.toISOString(),
+        })
+      }
+    }
+
+    // Second pass: Update applications with most recent email status
+    for (const [applicationId, emails] of emailsByApplication.entries()) {
+      // Sort by receivedAt DESC (most recent first)
+      emails.sort((a, b) => b.receivedAt.getTime() - a.receivedAt.getTime())
+
+      // Get the most recent email
+      const mostRecentEmail = emails[0]
+
+      // Get current application status
+      const { data: currentApp } = await supabase
+        .from('applications')
+        .select('status')
+        .eq('id', applicationId)
+        .single()
+
+      if (currentApp && currentApp.status !== mostRecentEmail.status) {
+        // Update status to the most recent email's status
         await supabase
-          .from('unmatched_emails')
+          .from('applications')
+          .update({
+            status: mostRecentEmail.status,
+            status_updated_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', applicationId)
+
+        // Log status change
+        await supabase
+          .from('application_status_history')
           .insert({
             user_id: user.id,
-            gmail_message_id: fullMessage.id,
-            gmail_thread_id: fullMessage.threadId,
-            subject,
-            sender_email: senderEmail,
-            sender_name: senderName,
-            snippet: fullMessage.snippet,
-            label_name: statusLabel,
-            suggested_status: newStatus,
-            received_at: new Date(parseInt(fullMessage.internalDate)).toISOString(),
+            application_id: applicationId,
+            previous_status: currentApp.status,
+            new_status: mostRecentEmail.status,
+            source: 'gmail',
+            gmail_message_id: mostRecentEmail.messageId,
+            notes: `Auto-updated from Gmail label: ${mostRecentEmail.statusLabel} (most recent of ${emails.length} email(s))`,
           })
 
-        unmatched++
+        matched++
       }
+    }
 
-      processed++
+    // Bulk insert unmatched emails
+    if (unmatchedEmails.length > 0) {
+      await supabase
+        .from('unmatched_emails')
+        .insert(unmatchedEmails)
+      unmatched = unmatchedEmails.length
     }
 
     // Update sync state
@@ -342,6 +481,11 @@ serve(async (req) => {
         matched,
         unmatched,
         networkingContacts,
+        debug: {
+          foundLabels,
+          targetLabelIds,
+          messagesFound: messages.length,
+        }
       }),
       { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     )
